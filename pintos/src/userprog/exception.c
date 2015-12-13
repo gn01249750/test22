@@ -10,6 +10,7 @@
 #include "vm/frame.h"
 #include "vm/swap.h"
 #include "userprog/process.h"
+#include "threads/palloc.h"
 #endif
 
 /* Number of page faults processed. */
@@ -156,7 +157,16 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   if(isStackGrowth(fault_addr, f->esp)){
-    printf("@@@@@@@@@ stack growth \n");
+    void *kpage = palloc_get_page(PAL_USER);
+    void *upage = pg_round_down(fault_addr);
+    struct thread *t = thread_current();
+    if(pagedir_get_page (t->pagedir, upage) == NULL){
+      //printf("upagenot found @@@@@@@@ \n");
+      pagedir_set_page (t->pagedir, upage, kpage, true);
+    }else{
+      palloc_free_page(kpage);
+    }
+    return;
   }
 
   /* To implement virtual memory, delete the rest of the function

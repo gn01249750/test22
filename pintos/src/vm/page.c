@@ -30,7 +30,7 @@ bool isStackGrowth(const void *vaddr, const void *esp)
   if(!is_user_vaddr(vaddr))
     return false;
 
-  if(esp -32 != vaddr || esp -8 != vaddr)
+  if(PHYS_BASE - 0x00800000 > vaddr || (esp -32 != vaddr && esp -8 != vaddr))
     return false;
 
   return true;
