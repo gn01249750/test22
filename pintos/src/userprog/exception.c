@@ -161,7 +161,8 @@ page_fault (struct intr_frame *f)
     void *upage = pg_round_down(fault_addr);
     struct thread *t = thread_current();
     if(pagedir_get_page (t->pagedir, upage) == NULL){
-      //printf("upagenot found @@@@@@@@ \n");
+      // printf("upagenot found @@@@@@@@ \n");
+      // printf("upage %p @@ \n", fault_addr - f->esp);
       pagedir_set_page (t->pagedir, upage, kpage, true);
     }else{
       palloc_free_page(kpage);

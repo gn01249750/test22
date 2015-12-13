@@ -12,6 +12,8 @@
 #include <list.h>
 #include "threads/malloc.h"
 #include "devices/input.h"
+#include <user/syscall.h>
+#include "threads/palloc.h"
 
 
 struct lock file_lock;
@@ -34,7 +36,16 @@ unsigned tell (int fd);
 void close (int fd);
 static void check_arg_content(const void *ptr);
 void buffer_address_valid(void* buffer, unsigned size);
+mapid_t mmap (int fd, void *addr);
+void munmap (mapid_t map);
 
+struct mmap_node {
+  int fd;
+  void *pageAddr;
+  tid_t threadID;
+  mapid_t mapid;
+  struct list_elem elem;
+};
 
 void
 syscall_init (void) 
@@ -51,9 +62,12 @@ static bool pointer_is_valid(const void *ptr)
   if( (void *) 0x08048000 > ptr)
     return false;
 
+  //printf("@@@@@@ before pagedir \n");
    void *ptr2 = pagedir_get_page(thread_current()->pagedir,ptr);
+   // printf("page pointer is: %p @@@@@@ \n", ptr2);
    if (ptr2 == NULL)
      return false;
+   
 
   return true; 
 }
@@ -172,6 +186,18 @@ syscall_handler (struct intr_frame *f)
     {
       check_args(f->esp,1);
       close(*(ptr+1));
+      break;
+    }
+  case SYS_MMAP:
+    {
+      check_args(f->esp,2);
+      f->eax = mmap(*(ptr+1),*(ptr+2));      
+      break;
+    }
+  case SYS_MUNMAP:
+    {
+      check_args(f->esp,1);
+      munmap(*(ptr+1));
       break;
     }
   }
@@ -361,19 +387,31 @@ void exit(int status)
 
 int write(int fd, const void *buffer , unsigned size)
 {
+  //printf("!!!!!!!!!!enter write \n");
+  //printf("@@@@@@ buffer: %p \n", buffer);
   check_arg_content((const void *) buffer);
+  // printf("#### fd == %d\n", fd);
+  
   buffer_address_valid(buffer,size);
+  // printf("@@@@#####$$$$$ \n");
   
   if(fd == 1){   /* write to console.  */
+    //printf("fd == 1@@@@@@@@@ \n");
     putbuf(buffer,size);
     return size;
   }else{         /* write to file.  */
     struct file *file = get_file_by_fd(fd);
+    //printf("$$$$$$$$**** file got \n");
     if(file == NULL)
       return -1;
     lock_acquire (&file_lock);
+
+    //    printf("$$$$$^^^^^ in lock %p %d %d\n", buffer, fd, file_length(&file));
+    
     int written_bytes = file_write(file,buffer,size);
+    //    printf("after write ****** @@@@@@ \n");
     lock_release (&file_lock);
+    // printf(" release lock @@@@@ %d\n",written_bytes);
     return written_bytes;
   }
 }
@@ -381,4 +419,69 @@ int write(int fd, const void *buffer , unsigned size)
 void halt(void)
 {
   shutdown_power_off();
+}
+
+mapid_t
+mmap (int fd, void *addr)
+{
+  //printf("entered fd = %d \n", fd);
+  if(fd == 0 || fd == 1)
+    return (mapid_t) -1;
+
+  //printf("1 \n");
+  if((int) addr % PGSIZE != 0 || addr == (void *) 0x0000)
+    return (mapid_t) -1;
+
+  // Implement overlapping files condition
+
+  
+  // printf("2 \n");
+  struct file* file = get_file_by_fd(fd);
+  // printf("2.1 \n");
+  unsigned fileSize = (unsigned) filesize(fd);
+  // printf("2.2 \n");
+   if(file == NULL || fileSize == 0) {
+     //    printf("2.3 \n");
+      return ((mapid_t) -1);
+   }
+   // printf("3 \n");
+  // Update the mmap_table in thread
+  //printf("test @@ \n");
+  struct thread *t = thread_current();
+  struct mmap_node* mapNode = malloc(sizeof(struct mmap_node));
+  mapNode->fd = fd;
+  mapNode->pageAddr = addr;
+  mapNode->threadID = t->tid;
+  //printf("4 \n");
+  
+  int listSize = list_size(&t->mmap_table);
+  mapNode->mapid = listSize + 1;
+  //printf("sucker \n");
+  list_push_back(&t->mmap_table, &mapNode->elem);
+  //printf("not sucker \n");
+  void *kpage = palloc_get_page(PAL_USER);
+  // Add page to page table
+  if(pagedir_get_page (t->pagedir, addr) == NULL){
+    //   printf("upagenot found @@@@@@@@ \n");
+      //printf("upage %p @@ \n", fault_addr - f->esp);
+      pagedir_set_page (t->pagedir, addr, kpage, true);
+      //if(pagedir_get_page(t->pagedir, addr)){
+	//	  printf("im in page table @@@@@@@@@@@@@@@@@@@@ \n");
+      //}
+    }else{
+      palloc_free_page(kpage);
+    }
+  
+  // Map the file to the address
+  int written_bytes = write(fd, addr, fileSize);
+  //printf("@@@@@@@@ written byte is : %d \n", written_bytes);
+  // Write check to see if end of file has been reached
+  //printf("end reached \n");
+  return ((mapid_t) (listSize + 1));
+}
+
+void
+munmap (mapid_t map)
+{
+  
 }

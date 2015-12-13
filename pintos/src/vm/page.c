@@ -25,14 +25,17 @@ struct spt* get_page(uint8_t *upage)
   	return NULL;
 }
 
+
 bool isStackGrowth(const void *vaddr, const void *esp)
 {
+
   if(!is_user_vaddr(vaddr))
     return false;
 
-  if(PHYS_BASE - 0x00800000 > vaddr || (esp -32 != vaddr && esp -8 != vaddr))
+    if(PHYS_BASE - 0x00800000 < vaddr &&
+       ((esp - 32) == vaddr || (esp - 4) == vaddr)){
+      return true;
+    }
+   
     return false;
-
-  return true;
-  
 }

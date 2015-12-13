@@ -104,6 +104,7 @@ struct thread
     struct semaphore sema_wait;
     struct semaphore sema_exit;
     struct list s_page_table;
+    struct list mmap_table;
     
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
