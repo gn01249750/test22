@@ -1,6 +1,8 @@
 #include "vm/page.h"
-
-
+#include <stdio.h>
+#include "threads/palloc.h"
+#include "userprog/pagedir.h"
+#include "threads/pte.h"
 
 
 bool update_spt(struct spt* entry)
@@ -9,26 +11,27 @@ bool update_spt(struct spt* entry)
 }
 
 
-
-struct spt* get_page(uint8_t *upage)
+struct spt *get_page(uint8_t *upage)
 {
-	struct list_elem *e;
-  	for(e = list_begin(&thread_current()->s_page_table); e != list_end(&thread_current()->s_page_table); e = list_next(e))
-  	{
-	  //  printf("@@@@@@@@@@@@ \n");
-	struct spt *entry= list_entry(e, struct spt, elem);
-    	if(entry->upage == upage){
-      		return entry;
-    	}
-	// printf("@@@@@@@@@@@@@@@@ 2\n");
- 	 }
-  	return NULL;
+   struct thread* t = thread_current();
+   struct list_elem *e;
+   // printf("in pget page @@@@@@@@@@@ \n");
+   for(e = list_begin(&t->s_page_table); e != list_end(&t->s_page_table); e = list_next(e)){
+     struct spt *entry= list_entry(e, struct spt, elem);
+     //   printf("etry upage %p @@@@@@@@@@@@@ \n", entry->upage);
+     if(entry->upage == upage){
+       return entry;
+     }else{
+       //    printf("not found @@@@@@@@@@@@@ \n");
+     }
+   }
+   return NULL;
 }
+
 
 
 bool isStackGrowth(const void *vaddr, const void *esp)
 {
-
   if(!is_user_vaddr(vaddr))
     return false;
 
@@ -39,3 +42,5 @@ bool isStackGrowth(const void *vaddr, const void *esp)
    
     return false;
 }
+
+

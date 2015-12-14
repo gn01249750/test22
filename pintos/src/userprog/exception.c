@@ -4,7 +4,8 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "filesys/file.h"
+#include <string.h>
 #ifdef VM
 #include "vm/page.h"
 #include "vm/frame.h"
@@ -156,6 +157,45 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  /*
+  // printf("fault addr %p @@@@@@@@@@@ \n", fault_addr);
+  struct spt *spt_entry = get_page((void *) pg_round_down(fault_addr));
+  if(spt_entry){
+    uint8_t *kpage = palloc_get_page (PAL_USER);
+    if(kpage == NULL){
+      // printf("boooooooooooom@@@@@@@@@ \n");
+    }
+    //  printf("1 @@@@@@ \n");
+      printf(" spt read @@@@@@@@ %d\n", spt_entry->read_bytes);
+    //  printf("spt file @@@@@@@@ %p\n", spt_entry->file);
+    //  printf("kpage addr @@@@@@@ %p\n", kpage);
+      printf("spt ofs @@@@@@@ %p\n", spt_entry->ofs);
+      
+      printf("file od %p @@@@@ \n", file_tell(spt_entry->file));
+    if(spt_entry->read_bytes >0){
+       file_seek(spt_entry->file, spt_entry->ofs);
+  printf("file od after seek %p @@@@@ \n", file_tell(spt_entry->file));
+      // printf("read bytes = %d @@@@@@ \n", readread);
+      if ((int) spt_entry->read_bytes != file_read(spt_entry->file, kpage,
+						      spt_entry->read_bytes))
+	{
+	  //	printf("read bytes = %d @@@@@@ \n", readread);
+	  // printf("12 @@@@@@ \n");
+	  palloc_free_page (kpage);
+	  return;
+	}
+    //  printf("3 @@@@@@ \n");
+      memset (kpage + spt_entry->read_bytes, 0, spt_entry->zero_bytes);
+    }
+    //printf("14 @@@@@@ \n");
+      if(pagedir_get_page (thread_current()->pagedir, spt_entry->upage) == NULL){
+	//	printf("15 @@@@@@ \n");
+	pagedir_set_page (thread_current()->pagedir, spt_entry->upage, kpage, spt_entry->writable);
+      }
+      // printf("161 @@@@@@ \n");
+      
+  }
+  */
   if(isStackGrowth(fault_addr, f->esp)){
     void *kpage = palloc_get_page(PAL_USER);
     void *upage = pg_round_down(fault_addr);
@@ -169,6 +209,9 @@ page_fault (struct intr_frame *f)
     }
     return;
   }
+  
+
+  
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

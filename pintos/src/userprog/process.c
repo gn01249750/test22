@@ -137,7 +137,7 @@ process_exit (void)
 {
   printf("%s: exit(%d)\n",thread_current()->name, thread_current()->return_status);
   struct thread *cur = thread_current ();
-  uint32_t *pd;
+  uint32_t *pd;  
 
   while(!list_empty(&cur->sema_wait.waiters)){
    sema_up(&cur->sema_wait);
@@ -163,6 +163,18 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  
+  struct list_elem *e;
+  
+  for(e = list_begin (&cur->mmap_table); e != list_end(&cur->mmap_table);
+      e = list_next(e))
+  {
+    struct mmap_node *mapNode = list_entry(e, struct mmap_node, elem);
+    munmap(mapNode->mapid);
+  }
+  
+ 
+  
 }
 
 /* Sets up the CPU for running user code in the current

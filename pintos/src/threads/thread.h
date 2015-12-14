@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include "synch.h"
 
+/* For Mmap ID use. */
+typedef int mapid_t;
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -105,6 +108,7 @@ struct thread
     struct semaphore sema_exit;
     struct list s_page_table;
     struct list mmap_table;
+    mapid_t mmap_size;
     
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

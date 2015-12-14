@@ -14,6 +14,7 @@
 #include "devices/input.h"
 #include <user/syscall.h>
 #include "threads/palloc.h"
+#include "vm/page.h"
 
 
 struct lock file_lock;
@@ -37,15 +38,11 @@ void close (int fd);
 static void check_arg_content(const void *ptr);
 void buffer_address_valid(void* buffer, unsigned size);
 mapid_t mmap (int fd, void *addr);
+void updateSPT(struct file* file, int fileSize, void* addr);
+bool isAddrMapped(void* addr);
 void munmap (mapid_t map);
 
-struct mmap_node {
-  int fd;
-  void *pageAddr;
-  tid_t threadID;
-  mapid_t mapid;
-  struct list_elem elem;
-};
+#define MAP_FAILED ((mapid_t) -1)
 
 void
 syscall_init (void) 
@@ -424,64 +421,130 @@ void halt(void)
 mapid_t
 mmap (int fd, void *addr)
 {
-  //printf("entered fd = %d \n", fd);
   if(fd == 0 || fd == 1)
-    return (mapid_t) -1;
+    return MAP_FAILED;
 
-  //printf("1 \n");
-  if((int) addr % PGSIZE != 0 || addr == (void *) 0x0000)
-    return (mapid_t) -1;
+  if((uint8_t) addr % PGSIZE != 0 || addr == (void *) 0x0000)
+    return MAP_FAILED;
 
-  // Implement overlapping files condition
+  // TODO: Implement overlapping files condition
 
-  
-  // printf("2 \n");
   struct file* file = get_file_by_fd(fd);
-  // printf("2.1 \n");
   unsigned fileSize = (unsigned) filesize(fd);
-  // printf("2.2 \n");
-   if(file == NULL || fileSize == 0) {
-     //    printf("2.3 \n");
-      return ((mapid_t) -1);
-   }
-   // printf("3 \n");
+  if(file == NULL || fileSize == 0) {
+      return MAP_FAILED;
+  }
+  
+  bool isDefined = isAddrMapped(addr);
+  
+  if(isDefined)
+    return MAP_FAILED;
+  else
+    updateSPT(file, fileSize, addr);
+  
   // Update the mmap_table in thread
-  //printf("test @@ \n");
   struct thread *t = thread_current();
   struct mmap_node* mapNode = malloc(sizeof(struct mmap_node));
   mapNode->fd = fd;
   mapNode->pageAddr = addr;
   mapNode->threadID = t->tid;
-  //printf("4 \n");
+
+  if(list_size(&t->mmap_table) == 0)
+    t->mmap_size = 1;
+  else
+    t->mmap_size++;
   
-  int listSize = list_size(&t->mmap_table);
-  mapNode->mapid = listSize + 1;
-  //printf("sucker \n");
+  mapNode->mapid = t->mmap_size;
   list_push_back(&t->mmap_table, &mapNode->elem);
-  //printf("not sucker \n");
-  void *kpage = palloc_get_page(PAL_USER);
-  // Add page to page table
-  if(pagedir_get_page (t->pagedir, addr) == NULL){
-    //   printf("upagenot found @@@@@@@@ \n");
-      //printf("upage %p @@ \n", fault_addr - f->esp);
-      pagedir_set_page (t->pagedir, addr, kpage, true);
-      //if(pagedir_get_page(t->pagedir, addr)){
-	//	  printf("im in page table @@@@@@@@@@@@@@@@@@@@ \n");
-      //}
-    }else{
-      palloc_free_page(kpage);
-    }
-  
-  // Map the file to the address
-  int written_bytes = write(fd, addr, fileSize);
-  //printf("@@@@@@@@ written byte is : %d \n", written_bytes);
-  // Write check to see if end of file has been reached
-  //printf("end reached \n");
-  return ((mapid_t) (listSize + 1));
+
+  return t->mmap_size;
 }
 
 void
-munmap (mapid_t map)
+updateSPT(struct file* file, int fileSize, void* addr)
 {
+  // Create SPTs with File mapping
+  struct thread* t = thread_current();
+  int sizeItr = (int) fileSize;
+  int offset = 0;
+  while(sizeItr > 0)
+  {
+    int page_read_bytes = 0;
+    int page_zero_bytes = 0;
+    if(sizeItr > PGSIZE)
+    {
+      page_read_bytes = PGSIZE;
+      page_zero_bytes = 0;
+    }
+    else
+    {
+      page_read_bytes = sizeItr;
+      page_zero_bytes = PGSIZE - sizeItr;
+    }
+    
+    struct spt* supTable = malloc(sizeof(struct spt));
+    supTable->upage = addr;
+    supTable->file = file;
+    supTable->ofs = offset;
+    supTable->read_bytes = page_read_bytes;
+    supTable->zero_bytes = page_zero_bytes;
+    list_push_back(&t->s_page_table, &supTable->elem);
+    sizeItr -= PGSIZE;
+    offset += PGSIZE;
+    addr += PGSIZE;
+  }
+}
+
+bool
+isAddrMapped(void* addr)
+{
+  struct thread* t = thread_current();
+  struct list_elem *e;
+
+  for(e = list_begin (&t->s_page_table); e != list_end(&t->s_page_table);
+      e = list_next(e))
+  {
+    struct spt *supTable = list_entry(e, struct spt, elem);
+    if(supTable->upage == addr) {
+      printf("@@@@@@@ addr is mapped \n");
+      return true;
+    }
+  }
+  return false;
+}
+
+void
+munmap (mapid_t mapid)
+{
+  struct thread* t = thread_current();
+  struct list_elem *e;
+  int fd;
+  for(e = list_begin (&t->mmap_table); e != list_end(&t->mmap_table);
+      e = list_next(e))
+  {
+    struct mmap_node *mapNode = list_entry(e, struct mmap_node, elem);
+    if(mapNode->mapid == mapid) {
+      fd = mapNode->fd;
+      list_remove(e);
+      free(mapNode);
+      break;
+    }
+  }
   
+  struct file* file = get_file_by_fd(fd);
+  for(e = list_begin (&t->s_page_table); e != list_end(&t->s_page_table);
+      e = list_next(e))
+  {
+    struct spt *supTable = list_entry(e, struct spt, elem);
+    if(supTable->file == file) {
+      if(pagedir_is_dirty(t->pagedir, supTable->upage))
+	file_write_at(file, supTable->upage, supTable->read_bytes,
+		      supTable->ofs);
+
+      list_remove(e);
+      free(supTable);
+      break;
+    }
+  }
+ 
 }

@@ -11,13 +11,13 @@
 
 struct spt
 {
-	uint8_t upage;
+	uint8_t *upage;
 	struct file* file;
 	off_t ofs;
 	uint32_t read_bytes;
 	uint32_t zero_bytes;
 	bool writable;
-
+  
 	struct list_elem elem;
 };
 

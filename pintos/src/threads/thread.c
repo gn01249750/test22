@@ -220,7 +220,7 @@ thread_create (const char *name, int priority,
   t->parent_waiting = false;
   t->exited = false;
   t->parent = thread_current()->tid;
-  //list_init(&s_page_table);
+  list_init(&t->s_page_table);
   list_init(&t->mmap_table);
   if(thread_current() != initial_thread)
     list_push_back(&thread_current()->child_list, &t->child_elem);

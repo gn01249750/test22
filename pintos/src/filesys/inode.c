@@ -203,7 +203,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
-
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
@@ -217,9 +216,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
       /* Number of bytes to actually copy out of this sector. */
       int chunk_size = size < min_left ? size : min_left;
-      if (chunk_size <= 0)
+      if (chunk_size <= 0){
         break;
-
+      }
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Read full sector directly into caller's buffer. */
@@ -232,13 +231,13 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
           if (bounce == NULL) 
             {
               bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
+              if (bounce == NULL){
                 break;
+	      }
             }
           block_read (fs_device, sector_idx, bounce);
           memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
         }
-      
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
@@ -274,6 +273,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
+
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
       /* Number of bytes to actually write into this sector. */
