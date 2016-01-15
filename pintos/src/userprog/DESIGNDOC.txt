@@ -1,0 +1,259 @@
+                	  +--------------------------+
+   	      		|     		CS 5600      	|
+           	 	| PROJECT 2: USER PROGRAMS   	|
+           	 	|    DESIGN DOCUMENT 	    	|
+           	 	  +--------------------------+
+ 
+---- GROUP ----
+ 
+>> Fill in the names and email addresses of your group members.
+ 
+Po An Hu <hu.po@husky.neu.edu>
+Mingzhe(Maggie) Xu <xu.ming@husky.neu.edu >
+Karthik Sambamoorthy <skar1618@gmail.com >
+ 
+---- PRELIMINARIES ----
+ 
+We have also consulted Stanford CS140 lecture notes and ppt except CS5600 course resources online.
+ 
+                   	   ARGUMENT PASSING
+                   	   ================
+ 
+---- DATA STRUCTURES ----
+ 
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+ 
+Changes are made to struct thread. We did not add any new ‘struct’.
+-   Thread struct
+We added these properties for user program in thread.h:
+-> struct list children;           	/* A list of children processes */
+-> struct list_elem child_elem;    	/* List elem for children list */
+-> struct semaphore sema_wait;     	/* Semaphore for process_wait. */
+-> struct semaphore sema_exit;     	/* Semaphore for process_exit. */
+-> int return_status;               /* The return status of the thread. Will be print out in process_wait */
+-> bool exited;                    	/* True if the process has exited */
+-> bool waiting;                    /* True if parent thread is waiting*/
+ 
+
+
+
+
+---- ALGORITHMS ----
+ 
+>> A2: Briefly describe how you implemented argument parsing. 
+>> How do you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+ 
+ >> how we implemented argument parsing and arranged for the elements of argv[] 
+ to be in the right order:
+
+Based on the flow of program execution, which starts from main, process_wait leading to 
+the process_execute, calling thread_create, which will then point start_process in stack.
+In process_execute, since it has been implemented, we just add the string tokenizer to 
+separate the file name and the rest of the arguments. If the command is “echo foo bar”, 
+without the argument parsing, it will treat the whole string as the filename though it is not. 
+So, we used strtok_r to get the command line parsed. fn = strtok_r(fn, " ", &rest), fn will be 
+'echo', then after getting the true file name we will create a thread by use 
+thread_create(fn, PRI_DEFAULT, start_process, original_string), where the origial_string
+ is a copy of the original input command. After running thread_create, if we get a invalid 
+ tid, we will free the memory; else, we need to schedule that thread. If it is not 
+ sussessfully loaded, having exit status -1, we will call sema_up and thread_exit to wait 
+ the thread exit.
+
+In thread_create, we initiate the thread setting the exit status as the initial value and 
+initiate it’s wait and exit semaphores as 0, the files that have been opened 
+(it’s children list) and the parent.
+
+In start_process, it calls setup_userprog_stack and put all the args into the memory. 
+Given in the reading how a command “/bin/ls -l foo bar” is processed and pushed into the stack:
+
+Address  	Name 		     Data 	 	Type
+0xbffffffc  argv[3][...]	bar\0   	char[4]
+0xbffffff8  argv[2][...]	foo\0		char[4]
+0xbffffff5	argv[1][...]	-l\0	 	char[3]
+0xbfffffed	argv[0][...]	/bin/ls\0	char[8]
+0xbfffffec	word-align  	0 			uint8_t
+0xbfffffe8	argv[4]			0			char *
+0xbfffffe4	argv[3]			0xbffffffc	char *
+0xbfffffe0	argv[2]			0xbffffff8	char *
+0xbfffffdc	argv[1]			0xbffffff5	char *
+0xbfffffd8	argv[0]			0xbfffffed	char *
+0xbfffffd4	argv			0xbfffffd8	char **
+0xbfffffd0	argc			4 			int
+0xbfffffcc	return address 	0 			void (*) ()
+
+
+From the above table, we need to push the args from right to left and separate them with 
+a null pointer at the end of each string. So in the function pass_arg, which is called by 
+setup-stack, we used a while loop to tokenize every input arguments from left to right 
+and at the same time using an array to keep track of each argument’s address and 
+subsequently push every argument’s address backwards from array[array.size -1] to array[0], 
+achieving the effect of pushing arguments from right to left.
+				
+
+ 
+                   	 	SYSTEM CALLS
+                   	 	============
+ 
+---- DATA STRUCTURES ----
+ 
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Thread.h:
+In struct thread:
+-> struct list file_list            /* A list of file_descriptors opened by thread */
+
+struct file_descriptor{             /* struct keeping track of the file and 
+   its associated file-descriptor id */
+   struct file *file;
+   int fd;
+   struct list_elem file_list_elem;
+}
+ 
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+Besides the reserved file descriptors 0 and 1, which are used for console standard input 
+and output respectively, the purpose of the file descriptor is like to give each opened 
+file an id so that respective system calls can find the specific opened file for actions 
+like read and write within the thread (with out implementation).
+We assigned every opened file with a unique file descriptor under the thread level 
+(single process). Therefore, two processes might have the same opened file with the same 
+file descriptor but this would not matter since the kernel protection mechanism is made 
+such that one process’s data will not and should not interfer with that of the other processes. 
+ 
+---- ALGORITHMS ----
+ 
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+
+For most of the system calls we have fairly similar handling procedures to read and write 
+user data from the kernel. We first examine the esp from intr_frame is a valid address 
+that is it is within user space and it is correctly mapped in the page directory. 
+Secondly, we then examine all the addresses of all available arguments (maximum of 3) 
+through the same process and in order to prevent the case where arguments given is 
+itself a bad address, we will have to examine the address of the argument when it is a 
+pointer. Finally, we call on the respective helper function for every system call and 
+push any returned value to the eax of the intr_frame to pass back to the user from kernel.
+ 
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+
+With our implementation, the least number of page table insepction is 1 when the passed 
+in data is all within one single page. The worst case that can happen is when all 4096 
+bytes are scattered across 4096 pages and each byte of data then would need 1 inspection 
+and will therefore take a total of 4096 inspections.
+ 
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+ 
+Our wait system call after examining the address of the passed-in argument, it calls on 
+process_wait immediately since they serve the save purpose to wait on a child given its 
+pid (in our implementation pid of a process is the same as its tid since there is only 
+one thread in one process). For process_wait, we return -1 when the given error 
+conditions, such as child is already being waited on, pid given is not a child of the 
+current thread etc, otherwise we will try to acquire lock, sema_wait, of the child process. 
+However the sema_wait of every process is initialized to be 0. Therefore, the parent 
+process will be blocked when first attempting to acquire the lock. The lock will only be 
+released when the child calls on process_exit, in which it releases the lock and at this 
+point the parent process will be able to acquire the lock and continue running. However, 
+this can raise a bug if the child process exited entirely and is destroyed before 
+the parent process continues running. This is because when parent process try to 
+acquire the sema_wait of the child process, it will get a page fault for the resources 
+of the child have been destroyed completely. Therefore, in this case, we have to lock 
+the child process to wait for the parent thread to acquire the child process’s sema_wait 
+before the child process can really exit.
+ 
+---- SYNCHRONIZATION ----
+ 
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+We initialized the child’s process with a lock, lock_exec, being acquried. 
+Parent process will try to acquire the lock after threa_create() has been 
+called in process_execuite and hence locked. This lock will only be released 
+after the new thread from thread_create() has finished loading and therefore 
+the parent thread will acquire the lock and continues running. This ensurs 
+that the child process is loaded before parent process can continue running again.
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+We record the exit status for each process and also for parent process, even 
+the current process exits, it can still have access to the child's exit status 
+and other properties of the child process.
+
+---- RATIONALE ----
+ 
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+
+By checking the validity of the input addresses from user and determine the subsequent 
+actions is the most straight-forward and relatively easier approach we thought it 
+could go, this way most of the changes only happen in syscall.c and we only had to do 
+a little work on the page fault handling in exceptions. 
+ 
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+Advantage:
+We keep a list of file descriptors in every thread and it allows a linear look up on 
+the files opened by the specific thread. 
+Disadvantage:
+Duplicate file descriptors are possible in different thread.
+ 
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+We didn’t change the mapping as one process only has one thread in this project. 
+However we can foresee some advantages to have different mapping for example it then makes 
+multi-threading tid assignment possible and also, 
+
+
+                   	   SURVEY QUESTIONS
+                   	   ================
+ 
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+ 
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+This assignment is hard and challenging for us. It took really long time for us to 
+figure out how and what to do.
+ 
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+Yes. The arguement parsing and system call gave us some insights on how the OS works 
+when the user initiate a command step by step.
+ 
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+The design doc questions can include some hints for the assignment and 
+that would be helpful.
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+It would be great if we can have a lab every week and have TA instruct 
+us on how to work on the project.
+
+>> Any other comments?
+
